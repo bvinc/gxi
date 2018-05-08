@@ -294,7 +294,20 @@ impl Ui {
             "update" => {
                 let p: UpdateParams = serde_json::from_value(params.clone())?;
                 self.handle_update(&p.view_id, &p.update.ops)
-            }
+            },
+            "theme_changed" | "available_themes" => {
+                //TODO: themes
+                Ok(())
+            },
+            "config_changed" => {
+                //TODO: config
+                Ok(())
+            },
+            "available_plugins" => {
+                //TODO: plugins
+                Ok(())
+            },
+
             _ => Err(GxiError::UnknownMethod(method.to_string()))
         }
         //Ok(())
@@ -488,12 +501,12 @@ fn convert_gtk_modifier(mt: ModifierType) -> u32 {
     ret
 }
 
-fn convert_eb_to_xi_click(eb: &EventButton) -> u32 {
+fn eb_to_xi_gesture_type(eb: &EventButton) -> &str {
     match eb.get_event_type() {
-        EventType::ButtonPress => 1,
-        EventType::DoubleButtonPress => 2,
-        EventType::TripleButtonPress => 3,
-        _ => 0,
+        EventType::ButtonPress => "point_select",
+        EventType::DoubleButtonPress => "word_select",
+        EventType::TripleButtonPress => "line_select",
+        _ => "point_select",
     }
 }
 
@@ -507,12 +520,15 @@ pub fn handle_button_press(w: &Layout, eb: &EventButton) -> Inhibit {
         let doc = ui.view_to_doc.get_mut(&view_id).unwrap();
         let (x,y) = eb.get_position();
         let (col, line) = doc.pos_to_cell(x, y);
-        ui.xicore.notify("edit", json!({"method": "click",
+        ui.xicore.notify("edit", json!({
+            "method": "gesture",
             "view_id": view_id,
-            "params": [line, col,
-                convert_gtk_modifier(eb.get_state()),
-                convert_eb_to_xi_click(eb)
-            ],
+            "params": {
+                "line": line,
+                "col": col,
+                "ty": eb_to_xi_gesture_type(eb)
+            }
+            ,
         }));
     });
     Inhibit(false)
