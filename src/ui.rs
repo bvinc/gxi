@@ -294,7 +294,20 @@ impl Ui {
             "update" => {
                 let p: UpdateParams = serde_json::from_value(params.clone())?;
                 self.handle_update(&p.view_id, &p.update.ops)
-            }
+            },
+            "theme_changed" | "available_themes" => {
+                //TODO: themes
+                Ok(())
+            },
+            "config_changed" => {
+                //TODO: config
+                Ok(())
+            },
+            "available_plugins" => {
+                //TODO: plugins
+                Ok(())
+            },
+
             _ => Err(GxiError::UnknownMethod(method.to_string()))
         }
         //Ok(())
