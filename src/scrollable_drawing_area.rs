@@ -2,20 +2,21 @@
  * This file is a monstrosity.  It was generated from the gnome-class project.
  * Due to various reasons, I could not use the gnome-class macro, or the
  * glib object wrapper macro.  One day, I hope to be able to use gnome-class.
- * 
+ *
  * The entire point of this file is to create a custom widget that extends
  * DrawingArea and implements Scrollable.  This was the only way I could find
  * to get nice GTK auto-hiding scrollbars.
- * 
+ *
  * This probably needs cleanup.
  */
 use std;
 
-use glib::StaticType;
 use glib::translate::*;
+use glib::StaticType;
 use gobject_sys;
 use gtk::{Adjustment, DrawingArea, Scrollable, ScrollablePolicy};
-use gtk_sys::{GtkDrawingArea, GtkWidget};
+use gtk::{Buildable, Widget};
+use gtk_sys::{GtkAdjustment, GtkDrawingArea, GtkWidget};
 use libc::c_int;
 
 use std::cell::Cell;
@@ -27,583 +28,45 @@ use std::hash::Hash;
 extern crate glib;
 extern crate glib_sys as glib_ffi;
 extern crate gobject_sys as gobject_ffi;
-use glib::object::Downcast;
-use glib::IsA;
+use glib::{glib_object_wrapper, glib_wrapper, Cast, IsA};
 use std::mem;
 use std::ptr;
 
-pub struct ScrollableDrawingArea(
-    ::glib::object::ObjectRef,
-    ::std::marker::PhantomData<imp::ScrollableDrawingAreaFfi>,
-);
-impl Clone for ScrollableDrawingArea {
-    #[inline]
-    fn clone(&self) -> ScrollableDrawingArea {
-        match *self {
-            ScrollableDrawingArea(ref __self_0_0, ref __self_0_1) => ScrollableDrawingArea(
-                Clone::clone(&(*__self_0_0)),
-                Clone::clone(&(*__self_0_1)),
-            ),
-        }
+glib_wrapper! {
+    pub struct ScrollableDrawingArea(Object<imp::ScrollableDrawingAreaFfi, imp::ScrollableDrawingAreaClass, ScrollableDrawingAreaClass>)
+        @extends DrawingArea, Widget, // parent classes
+        @implements Buildable, Scrollable;  // interfaces
+
+    match fn {
+        get_type => || imp::scrollable_drawing_area_get_type(),
     }
 }
-impl Debug for ScrollableDrawingArea {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            ScrollableDrawingArea(ref __self_0_0, ref __self_0_1) => {
-                let mut debug_trait_builder = f.debug_tuple("ScrollableDrawingArea");
-                let _ = debug_trait_builder.field(&&(*__self_0_0));
-                let _ = debug_trait_builder.field(&&(*__self_0_1));
-                debug_trait_builder.finish()
-            }
-        }
-    }
-}
-impl Hash for ScrollableDrawingArea {
-    fn hash<__H: ::std::hash::Hasher>(&self, state: &mut __H) -> () {
-        match *self {
-            ScrollableDrawingArea(ref __self_0_0, ref __self_0_1) => {
-                Hash::hash(&(*__self_0_0), state);
-                Hash::hash(&(*__self_0_1), state)
-            }
-        }
-    }
-}
-#[doc(hidden)]
-impl Into<::glib::object::ObjectRef> for ScrollableDrawingArea {
-    fn into(self) -> ::glib::object::ObjectRef {
-        self.0
-    }
-}
-#[doc(hidden)]
-impl ::glib::wrapper::UnsafeFrom<::glib::object::ObjectRef> for ScrollableDrawingArea {
-    unsafe fn from(t: ::glib::object::ObjectRef) -> Self {
-        ScrollableDrawingArea(t, ::std::marker::PhantomData)
-    }
-}
-#[doc(hidden)]
-impl ::glib::translate::GlibPtrDefault for ScrollableDrawingArea {
-    type GlibType = *mut imp::ScrollableDrawingAreaFfi;
-}
-#[doc(hidden)]
-impl ::glib::wrapper::Wrapper for ScrollableDrawingArea {
-    type GlibType = imp::ScrollableDrawingAreaFfi;
-    type GlibClassType = imp::ScrollableDrawingAreaClass;
-}
-#[doc(hidden)]
-impl<'a> ::glib::translate::ToGlibPtr<'a, *const imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    type Storage = <::glib::object::ObjectRef as ::glib::translate::ToGlibPtr<
-        'a,
-        *mut ::glib::object::GObject,
-    >>::Storage;
-    #[inline]
-    fn to_glib_none(
-        &'a self,
-    ) -> ::glib::translate::Stash<'a, *const imp::ScrollableDrawingAreaFfi, Self> {
-        let stash = self.0.to_glib_none();
-        ::glib::translate::Stash(stash.0 as *const _, stash.1)
-    }
-    #[inline]
-    fn to_glib_full(&self) -> *const imp::ScrollableDrawingAreaFfi {
-        self.0.to_glib_full() as *const _
-    }
-}
-#[doc(hidden)]
-impl<'a> ::glib::translate::ToGlibPtr<'a, *mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    type Storage = <::glib::object::ObjectRef as ::glib::translate::ToGlibPtr<
-        'a,
-        *mut ::glib::object::GObject,
-    >>::Storage;
-    #[inline]
-    fn to_glib_none(
-        &'a self,
-    ) -> ::glib::translate::Stash<'a, *mut imp::ScrollableDrawingAreaFfi, Self> {
-        let stash = self.0.to_glib_none();
-        ::glib::translate::Stash(stash.0 as *mut _, stash.1)
-    }
-    #[inline]
-    fn to_glib_full(&self) -> *mut imp::ScrollableDrawingAreaFfi {
-        self.0.to_glib_full() as *mut _
-    }
-}
-#[doc(hidden)]
-impl<'a>
-    ::glib::translate::ToGlibContainerFromSlice<'a, *mut *mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    type Storage = (
-        Vec<Stash<'a, *mut imp::ScrollableDrawingAreaFfi, ScrollableDrawingArea>>,
-        Option<Vec<*mut imp::ScrollableDrawingAreaFfi>>,
-    );
-    fn to_glib_none_from_slice(
-        t: &'a [ScrollableDrawingArea],
-    ) -> (*mut *mut imp::ScrollableDrawingAreaFfi, Self::Storage) {
-        let v: Vec<_> = t.iter().map(|s| s.to_glib_none()).collect();
-        let mut v_ptr: Vec<_> = v.iter().map(|s| s.0).collect();
-        v_ptr.push(ptr::null_mut() as *mut imp::ScrollableDrawingAreaFfi);
-        (
-            v_ptr.as_ptr() as *mut *mut imp::ScrollableDrawingAreaFfi,
-            (v, Some(v_ptr)),
-        )
-    }
-    fn to_glib_container_from_slice(
-        t: &'a [ScrollableDrawingArea],
-    ) -> (*mut *mut imp::ScrollableDrawingAreaFfi, Self::Storage) {
-        let v: Vec<_> = t.iter().map(|s| s.to_glib_none()).collect();
-        let v_ptr = unsafe {
-            let v_ptr = glib_ffi::g_malloc0(
-                mem::size_of::<*mut imp::ScrollableDrawingAreaFfi>() * (t.len() + 1),
-            ) as *mut *mut imp::ScrollableDrawingAreaFfi;
-            for (i, s) in v.iter().enumerate() {
-                ptr::write(v_ptr.offset(i as isize), s.0);
-            }
-            v_ptr
-        };
-        (v_ptr, (v, None))
-    }
-    fn to_glib_full_from_slice(
-        t: &[ScrollableDrawingArea],
-    ) -> *mut *mut imp::ScrollableDrawingAreaFfi {
-        unsafe {
-            let v_ptr = glib_ffi::g_malloc0(
-                mem::size_of::<*mut imp::ScrollableDrawingAreaFfi>() * (t.len() + 1),
-            ) as *mut *mut imp::ScrollableDrawingAreaFfi;
-            for (i, s) in t.iter().enumerate() {
-                ptr::write(v_ptr.offset(i as isize), s.to_glib_full());
-            }
-            v_ptr
-        }
-    }
-}
-#[doc(hidden)]
-impl<'a>
-    ::glib::translate::ToGlibContainerFromSlice<'a, *const *mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    type Storage = (
-        Vec<Stash<'a, *mut imp::ScrollableDrawingAreaFfi, ScrollableDrawingArea>>,
-        Option<Vec<*mut imp::ScrollableDrawingAreaFfi>>,
-    );
-    fn to_glib_none_from_slice(
-        t: &'a [ScrollableDrawingArea],
-    ) -> (*const *mut imp::ScrollableDrawingAreaFfi, Self::Storage) {
-        let (ptr, stash) = ::glib::translate::ToGlibContainerFromSlice::<
-            'a,
-            *mut *mut imp::ScrollableDrawingAreaFfi,
-        >::to_glib_none_from_slice(t);
-        (ptr as *const *mut imp::ScrollableDrawingAreaFfi, stash)
-    }
-    fn to_glib_container_from_slice(
-        _: &'a [ScrollableDrawingArea],
-    ) -> (*const *mut imp::ScrollableDrawingAreaFfi, Self::Storage) {
-        {
-            panic!("not yet implemented")
-        }
-    }
-    fn to_glib_full_from_slice(
-        _: &[ScrollableDrawingArea],
-    ) -> *const *mut imp::ScrollableDrawingAreaFfi {
-        {
-            panic!("not yet implemented")
-        }
-    }
-}
-#[doc(hidden)]
-impl ::glib::translate::FromGlibPtrNone<*mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    #[inline]
-    unsafe fn from_glib_none(ptr: *mut imp::ScrollableDrawingAreaFfi) -> Self {
-        if true {
-            if !::glib::types::instance_of::<Self>(ptr as *const _) {
-                {
-                    panic!(
-                        "assertion failed: ::glib::types::instance_of::<Self>(ptr as *const _)"
-                    )
-                }
-            };
-        };
-        ScrollableDrawingArea(
-            ::glib::translate::from_glib_none(ptr as *mut _),
-            ::std::marker::PhantomData,
-        )
-    }
-}
-#[doc(hidden)]
-impl ::glib::translate::FromGlibPtrNone<*const imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    #[inline]
-    unsafe fn from_glib_none(ptr: *const imp::ScrollableDrawingAreaFfi) -> Self {
-        if true {
-            if !::glib::types::instance_of::<Self>(ptr as *const _) {
-                {
-                    panic!(
-                        "assertion failed: ::glib::types::instance_of::<Self>(ptr as *const _)"
-                    )
-                }
-            };
-        };
-        ScrollableDrawingArea(
-            ::glib::translate::from_glib_none(ptr as *mut _),
-            ::std::marker::PhantomData,
-        )
-    }
-}
-#[doc(hidden)]
-impl ::glib::translate::FromGlibPtrFull<*mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    #[inline]
-    unsafe fn from_glib_full(ptr: *mut imp::ScrollableDrawingAreaFfi) -> Self {
-        if true {
-            if !::glib::types::instance_of::<Self>(ptr as *const _) {
-                {
-                    panic!(
-                        "assertion failed: ::glib::types::instance_of::<Self>(ptr as *const _)"
-                    )
-                }
-            };
-        };
-        ScrollableDrawingArea(
-            ::glib::translate::from_glib_full(ptr as *mut _),
-            ::std::marker::PhantomData,
-        )
-    }
-}
-#[doc(hidden)]
-impl ::glib::translate::FromGlibPtrBorrow<*mut imp::ScrollableDrawingAreaFfi>
-    for ScrollableDrawingArea
-{
-    #[inline]
-    unsafe fn from_glib_borrow(ptr: *mut imp::ScrollableDrawingAreaFfi) -> Self {
-        if true {
-            if !::glib::types::instance_of::<Self>(ptr as *const _) {
-                {
-                    panic!(
-                        "assertion failed: ::glib::types::instance_of::<Self>(ptr as *const _)"
-                    )
-                }
-            };
-        };
-        ScrollableDrawingArea(
-            ::glib::translate::from_glib_borrow(ptr as *mut _),
-            ::std::marker::PhantomData,
-        )
-    }
-}
-#[doc(hidden)]
-impl
-    ::glib::translate::FromGlibContainerAsVec<
-        *mut imp::ScrollableDrawingAreaFfi,
-        *mut *mut imp::ScrollableDrawingAreaFfi,
-    > for ScrollableDrawingArea
-{
-    unsafe fn from_glib_none_num_as_vec(
-        ptr: *mut *mut imp::ScrollableDrawingAreaFfi,
-        num: usize,
-    ) -> Vec<Self> {
-        if num == 0 || ptr.is_null() {
-            return Vec::new();
-        }
-        let mut res = Vec::with_capacity(num);
-        for i in 0..num {
-            res.push(::glib::translate::from_glib_none(ptr::read(
-                ptr.offset(i as isize),
-            )));
-        }
-        res
-    }
-    unsafe fn from_glib_container_num_as_vec(
-        ptr: *mut *mut imp::ScrollableDrawingAreaFfi,
-        num: usize,
-    ) -> Vec<Self> {
-        let res =
-            ::glib::translate::FromGlibContainerAsVec::from_glib_none_num_as_vec(ptr, num);
-        glib_ffi::g_free(ptr as *mut _);
-        res
-    }
-    unsafe fn from_glib_full_num_as_vec(
-        ptr: *mut *mut imp::ScrollableDrawingAreaFfi,
-        num: usize,
-    ) -> Vec<Self> {
-        if num == 0 || ptr.is_null() {
-            return Vec::new();
-        }
-        let mut res = Vec::with_capacity(num);
-        for i in 0..num {
-            res.push(::glib::translate::from_glib_full(ptr::read(
-                ptr.offset(i as isize),
-            )));
-        }
-        glib_ffi::g_free(ptr as *mut _);
-        res
-    }
-}
-#[doc(hidden)]
-impl
-    ::glib::translate::FromGlibPtrArrayContainerAsVec<
-        *mut imp::ScrollableDrawingAreaFfi,
-        *mut *mut imp::ScrollableDrawingAreaFfi,
-    > for ScrollableDrawingArea
-{
-    unsafe fn from_glib_none_as_vec(ptr: *mut *mut imp::ScrollableDrawingAreaFfi) -> Vec<Self> {
-        ::glib::translate::FromGlibContainerAsVec::from_glib_none_num_as_vec(
-            ptr,
-            ::glib::translate::c_ptr_array_len(ptr),
-        )
-    }
-    unsafe fn from_glib_container_as_vec(
-        ptr: *mut *mut imp::ScrollableDrawingAreaFfi,
-    ) -> Vec<Self> {
-        ::glib::translate::FromGlibContainerAsVec::from_glib_container_num_as_vec(
-            ptr,
-            ::glib::translate::c_ptr_array_len(ptr),
-        )
-    }
-    unsafe fn from_glib_full_as_vec(ptr: *mut *mut imp::ScrollableDrawingAreaFfi) -> Vec<Self> {
-        ::glib::translate::FromGlibContainerAsVec::from_glib_full_num_as_vec(
-            ptr,
-            ::glib::translate::c_ptr_array_len(ptr),
-        )
-    }
-}
-#[doc(hidden)]
-impl
-    ::glib::translate::FromGlibContainerAsVec<
-        *mut imp::ScrollableDrawingAreaFfi,
-        *const *mut imp::ScrollableDrawingAreaFfi,
-    > for ScrollableDrawingArea
-{
-    unsafe fn from_glib_none_num_as_vec(
-        ptr: *const *mut imp::ScrollableDrawingAreaFfi,
-        num: usize,
-    ) -> Vec<Self> {
-        ::glib::translate::FromGlibContainerAsVec::from_glib_none_num_as_vec(
-            ptr as *mut *mut _,
-            num,
-        )
-    }
-    unsafe fn from_glib_container_num_as_vec(
-        _: *const *mut imp::ScrollableDrawingAreaFfi,
-        _: usize,
-    ) -> Vec<Self> {
-        {
-            unimplemented!()
-        }
-    }
-    unsafe fn from_glib_full_num_as_vec(
-        _: *const *mut imp::ScrollableDrawingAreaFfi,
-        _: usize,
-    ) -> Vec<Self> {
-        {
-            unimplemented!()
-        }
-    }
-}
-#[doc(hidden)]
-impl
-    ::glib::translate::FromGlibPtrArrayContainerAsVec<
-        *mut imp::ScrollableDrawingAreaFfi,
-        *const *mut imp::ScrollableDrawingAreaFfi,
-    > for ScrollableDrawingArea
-{
-    unsafe fn from_glib_none_as_vec(
-        ptr: *const *mut imp::ScrollableDrawingAreaFfi,
-    ) -> Vec<Self> {
-        ::glib::translate::FromGlibPtrArrayContainerAsVec::from_glib_none_as_vec(
-            ptr as *mut *mut _,
-        )
-    }
-    unsafe fn from_glib_container_as_vec(
-        _: *const *mut imp::ScrollableDrawingAreaFfi,
-    ) -> Vec<Self> {
-        {
-            unimplemented!()
-        }
-    }
-    unsafe fn from_glib_full_as_vec(_: *const *mut imp::ScrollableDrawingAreaFfi) -> Vec<Self> {
-        {
-            unimplemented!()
-        }
-    }
-}
-impl ::glib::types::StaticType for ScrollableDrawingArea {
-    fn static_type() -> ::glib::types::Type {
-        unsafe { ::glib::translate::from_glib(imp::scrollable_drawing_area_get_type()) }
-    }
-}
-impl<T: ::glib::object::IsA<::glib::object::Object>> ::std::cmp::PartialEq<T>
-    for ScrollableDrawingArea
-{
-    #[inline]
-    fn eq(&self, other: &T) -> bool {
-        use glib::translate::ToGlibPtr;
-        self.0.to_glib_none().0 == other.to_glib_none().0
-    }
-}
-#[doc(hidden)]
-impl<'a> ::glib::value::FromValueOptional<'a> for ScrollableDrawingArea {
-    unsafe fn from_value_optional(value: &::glib::value::Value) -> Option<Self> {
-        Option::<ScrollableDrawingArea>::from_glib_full(gobject_ffi::g_value_dup_object(
-            value.to_glib_none().0,
-        )
-            as *mut imp::ScrollableDrawingAreaFfi)
-            .map(|o| {
-            ::glib::object::Downcast::downcast_unchecked(o)
-        })
-    }
-}
-#[doc(hidden)]
-impl ::glib::value::SetValue for ScrollableDrawingArea {
-    unsafe fn set_value(value: &mut ::glib::value::Value, this: &Self) {
-        gobject_ffi::g_value_set_object(
-            value.to_glib_none_mut().0,
-            ::glib::translate::ToGlibPtr::<*mut imp::ScrollableDrawingAreaFfi>::to_glib_none(
-                this,
-            ).0 as *mut gobject_ffi::GObject,
-        )
-    }
-}
-#[doc(hidden)]
-impl ::glib::value::SetValueOptional for ScrollableDrawingArea {
-    unsafe fn set_value_optional(value: &mut ::glib::value::Value, this: Option<&Self>) {
-        gobject_ffi::g_value_set_object(
-            value.to_glib_none_mut().0,
-            ::glib::translate::ToGlibPtr::<*mut imp::ScrollableDrawingAreaFfi>::to_glib_none(
-                &this,
-            ).0 as *mut gobject_ffi::GObject,
-        )
-    }
-}
-impl ::std::cmp::Eq for ScrollableDrawingArea {}
-#[doc(hidden)]
-impl<'a> ::glib::translate::ToGlibPtr<'a, *mut GtkDrawingArea> for ScrollableDrawingArea {
-    type Storage = <::glib::object::ObjectRef as ::glib::translate::ToGlibPtr<
-        'a,
-        *mut ::glib::object::GObject,
-    >>::Storage;
-    #[inline]
-    fn to_glib_none(
-        &'a self,
-    ) -> ::glib::translate::Stash<
-        'a,
-        *mut <DrawingArea as ::glib::wrapper::Wrapper>::GlibType,
-        Self,
-    > {
-        let stash = self.0.to_glib_none();
-        unsafe {
-            if true {
-                if !::glib::types::instance_of::<DrawingArea>(stash.0 as *const _) {
-                    {
-                        panic!("assertion failed: ::glib::types::instance_of::<DrawingArea>(stash.0 as *const _)")
-                    }
-                };
-            };
-        }
-        ::glib::translate::Stash(stash.0 as *mut _, stash.1)
-    }
-    #[inline]
-    fn to_glib_full(&self) -> *mut <DrawingArea as ::glib::wrapper::Wrapper>::GlibType {
-        let ptr = self.0.to_glib_full();
-        unsafe {
-            if true {
-                if !::glib::types::instance_of::<DrawingArea>(ptr as *const _) {
-                    {
-                        panic!("assertion failed: ::glib::types::instance_of::<DrawingArea>(ptr as *const _)")
-                    }
-                };
-            };
-        }
-        ptr as *mut _
-    }
-}
-unsafe impl ::glib::object::IsA<DrawingArea> for ScrollableDrawingArea {}
-#[doc(hidden)]
-impl<'a> ::glib::translate::ToGlibPtr<'a, *mut GtkWidget> for ScrollableDrawingArea {
-    type Storage = <::glib::object::ObjectRef as ::glib::translate::ToGlibPtr<
-        'a,
-        *mut ::glib::object::GObject,
-    >>::Storage;
-    #[inline]
-    fn to_glib_none(
-        &'a self,
-    ) -> ::glib::translate::Stash<
-        'a,
-        *mut GtkWidget,
-        Self,
-    > {
-        let stash = self.0.to_glib_none();
-        unsafe {
-            if true {
-                if !::glib::types::instance_of::<DrawingArea>(stash.0 as *const _) {
-                    {
-                        panic!("assertion failed: ::glib::types::instance_of::<DrawingArea>(stash.0 as *const _)")
-                    }
-                };
-            };
-        }
-        ::glib::translate::Stash(stash.0 as *mut _, stash.1)
-    }
-    #[inline]
-    fn to_glib_full(&self) -> *mut GtkWidget {
-        let ptr = self.0.to_glib_full();
-        unsafe {
-            if true {
-                if !::glib::types::instance_of::<DrawingArea>(ptr as *const _) {
-                    {
-                        panic!("assertion failed: ::glib::types::instance_of::<DrawingArea>(ptr as *const _)")
-                    }
-                };
-            };
-        }
-        ptr as *mut _
-    }
-}
-unsafe impl ::glib::object::IsA<::gtk::Widget> for ScrollableDrawingArea {}
-#[doc(hidden)]
-impl<'a> ::glib::translate::ToGlibPtr<'a, *mut ::glib::object::GObject> for ScrollableDrawingArea {
-    type Storage = <::glib::object::ObjectRef as ::glib::translate::ToGlibPtr<
-        'a,
-        *mut ::glib::object::GObject,
-    >>::Storage;
-    #[inline]
-    fn to_glib_none(
-        &'a self,
-    ) -> ::glib::translate::Stash<'a, *mut ::glib::object::GObject, Self> {
-        let stash = self.0.to_glib_none();
-        ::glib::translate::Stash(stash.0 as *mut _, stash.1)
-    }
-    #[inline]
-    fn to_glib_full(&self) -> *mut ::glib::object::GObject {
-        (&self.0).to_glib_full() as *mut _
-    }
-}
-unsafe impl ::glib::object::IsA<::glib::object::Object> for ScrollableDrawingArea {}
+
 pub mod imp {
-    use gtk::{Adjustment, DrawingArea, Scrollable, ScrollablePolicy};
-    use super::ScrollableDrawingArea;
-    use libc::c_int;
     use super::super::*;
     use super::glib;
     use super::glib_ffi;
     use super::gobject_ffi;
+    use super::ScrollableDrawingArea;
     use glib::translate::*;
+    use glib::Cast;
+    use gtk::{Adjustment, DrawingArea, Scrollable, ScrollablePolicy};
+    use gtk_sys::{GtkAdjustment, GtkDrawingArea, GtkDrawingAreaClass, GtkWidget};
+    use libc::c_int;
+    use std::cell::Cell;
     use std::ffi::CString;
     use std::mem;
     use std::ptr;
-    use std::cell::Cell;
+
     #[repr(C)]
+    #[derive(Debug)]
     pub struct ScrollableDrawingAreaFfi {
-        pub parent: <DrawingArea as glib::wrapper::Wrapper>::GlibType,
+        pub parent: GtkDrawingArea,
     }
     #[repr(C)]
+    #[derive(Debug)]
     pub struct ScrollableDrawingAreaClass {
-        pub parent_class: <DrawingArea as glib::wrapper::Wrapper>::GlibClassType,
+        pub parent_class: GtkDrawingAreaClass,
         pub value_changed:
             Option<unsafe extern "C" fn(this: *mut ScrollableDrawingAreaFfi) -> (())>,
         pub size_allocate: Option<
@@ -612,14 +75,16 @@ pub mod imp {
     }
     #[allow(non_camel_case_types)]
     #[repr(u32)]
+    #[derive(Debug)]
     enum Properties {
         hadjustment = 1u32,
         hscroll_policy = 2u32,
         vadjustment = 3u32,
         vscroll_policy = 4u32,
     }
+    #[derive(Debug)]
     struct ScrollableDrawingAreaClassPrivate {
-        parent_class: *const <DrawingArea as glib::wrapper::Wrapper>::GlibClassType,
+        parent_class: *const GtkDrawingAreaClass,
         properties: *const Vec<*const gobject_ffi::GParamSpec>,
         value_changed_signal_id: u32,
     }
@@ -628,6 +93,7 @@ pub mod imp {
         properties: 0 as *const _,
         value_changed_signal_id: 0,
     };
+    #[derive(Debug)]
     struct ScrollableDrawingAreaPriv {
         hadjustment: RefCell<Adjustment>,
         hscroll_policy: Cell<c_int>,
@@ -654,8 +120,7 @@ pub mod imp {
                     <Self as ToGlibPtr<*mut ScrollableDrawingAreaFfi>>::to_glib_none(self).0
                         as *mut gobject_ffi::GTypeInstance,
                     scrollable_drawing_area_get_type(),
-                )
-                    as *const Option<ScrollableDrawingAreaPriv>;
+                ) as *const Option<ScrollableDrawingAreaPriv>;
                 (&*_private).as_ref().unwrap()
             }
         }
@@ -687,28 +152,28 @@ pub mod imp {
             match property_id {
                 1u32 => {
                     let v: glib::Value = unsafe { FromGlibPtrNone::from_glib_none(value) };
-                    if let Some(value) = v.get::<Adjustment>() {
+                    if let Ok(Some(value)) = v.get::<Adjustment>() {
                         let mut private = self.get_priv();
                         *private.hadjustment.borrow_mut() = value.clone();
                     }
                 }
                 2u32 => {
                     let v: glib::Value = unsafe { FromGlibPtrNone::from_glib_none(value) };
-                    if let Some(value) = v.get::<c_int>() {
+                    if let Ok(Some(value)) = v.get::<c_int>() {
                         let mut private = self.get_priv();
                         private.hscroll_policy.set(value);
                     }
                 }
                 3u32 => {
                     let v: glib::Value = unsafe { FromGlibPtrNone::from_glib_none(value) };
-                    if let Some(value) = v.get::<Adjustment>() {
+                    if let Ok(Some(value)) = v.get::<Adjustment>() {
                         let mut private = self.get_priv();
                         *private.vadjustment.borrow_mut() = value.clone();
                     }
                 }
                 4u32 => {
                     let v: glib::Value = unsafe { FromGlibPtrNone::from_glib_none(value) };
-                    if let Some(value) = v.get::<c_int>() {
+                    if let Ok(Some(value)) = v.get::<c_int>() {
                         let mut private = self.get_priv();
                         private.vscroll_policy.set(value);
                     }
@@ -722,7 +187,8 @@ pub mod imp {
                 1u32 => {
                     let ret: *mut ::gobject_sys::GObject = (|| {
                         let private = self.get_priv();
-                        return private.hadjustment.borrow().to_glib_none().0;
+                        let ptr: *mut GtkAdjustment = private.hadjustment.borrow().to_glib_none().0;
+                        return ptr as *mut ::gobject_sys::GObject;
                     })();
                     unsafe {
                         gobject_ffi::g_value_set_object(value, ret);
@@ -740,7 +206,8 @@ pub mod imp {
                 3u32 => {
                     let ret: *mut ::gobject_sys::GObject = (|| {
                         let private = self.get_priv();
-                        return private.vadjustment.borrow().to_glib_none().0;
+                        let ptr: *mut GtkAdjustment = private.vadjustment.borrow().to_glib_none().0;
+                        return ptr as *mut ::gobject_sys::GObject;
                     })();
                     unsafe {
                         gobject_ffi::g_value_set_object(value, ret);
@@ -775,10 +242,9 @@ pub mod imp {
             let obj = obj;
             #[allow(deprecated)]
             let _guard = glib::CallbackGuard::new();
-            let _private = gobject_ffi::g_type_instance_get_private(
-                obj,
-                scrollable_drawing_area_get_type(),
-            ) as *mut Option<ScrollableDrawingAreaPriv>;
+            let _private =
+                gobject_ffi::g_type_instance_get_private(obj, scrollable_drawing_area_get_type())
+                    as *mut Option<ScrollableDrawingAreaPriv>;
             ptr::write(
                 _private,
                 Some(<ScrollableDrawingAreaPriv as Default>::default()),
@@ -918,8 +384,8 @@ pub mod imp {
                     mut_override(param_gtypes.as_ptr()),
                 );
             }
-            PRIV.parent_class = gobject_ffi::g_type_class_peek_parent(vtable)
-                as *const <DrawingArea as glib::wrapper::Wrapper>::GlibClassType;
+            PRIV.parent_class =
+                gobject_ffi::g_type_class_peek_parent(vtable) as *const GtkDrawingAreaClass;
         }
     }
     pub unsafe extern "C" fn scrollable_drawing_area_new() -> *mut ScrollableDrawingAreaFfi {
@@ -966,12 +432,12 @@ pub mod imp {
                 Some(ScrollableDrawingAreaClass::init),
                 instance_size as u32,
                 Some(ScrollableDrawingAreaFfi::init),
-                gobject_ffi::GTypeFlags::empty(),
+                0,
             );
 
-            let interface_info = gobject_ffi::GInterfaceInfo{
-                interface_init: None, //TODO
-                interface_finalize: None, //TODO
+            let interface_info = gobject_ffi::GInterfaceInfo {
+                interface_init: None,            //TODO
+                interface_finalize: None,        //TODO
                 interface_data: ptr::null_mut(), //TODO
             };
             gobject_ffi::g_type_add_interface_static(
@@ -989,10 +455,7 @@ impl ScrollableDrawingArea {
     }
 }
 pub trait ScrollableDrawingAreaExt {
-    fn connect_value_changed<F: Fn(&Self) -> (()) + 'static>(
-        &self,
-        f: F,
-    ) -> glib::SignalHandlerId;
+    fn connect_value_changed<F: Fn(&Self) -> (()) + 'static>(&self, f: F) -> glib::SignalHandlerId;
     fn size_allocate(&self, i: u32, j: u32) -> u32;
     fn get_property_hadjustment(&self) -> Adjustment;
     fn get_property_hscroll_policy(&self) -> u32;
@@ -1006,71 +469,74 @@ pub trait ScrollableDrawingAreaExt {
 impl<O: IsA<ScrollableDrawingArea> + IsA<glib::object::Object> + glib::object::ObjectExt>
     ScrollableDrawingAreaExt for O
 {
-    fn connect_value_changed<F: Fn(&Self) -> (()) + 'static>(
-        &self,
-        f: F,
-    ) -> glib::SignalHandlerId {
+    fn connect_value_changed<F: Fn(&Self) -> (()) + 'static>(&self, f: F) -> glib::SignalHandlerId {
         unsafe {
             let f: Box<Box<Fn(&Self) -> (()) + 'static>> = Box::new(Box::new(f));
-            glib::signal::connect(
-                self.to_glib_none().0,
-                "value_changed",
+            glib::signal::connect_raw(
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
+                "value_changed".to_glib_none().0,
                 mem::transmute(value_changed_signal_handler_trampoline::<Self> as usize),
                 Box::into_raw(f) as *mut _,
             )
         }
     }
     fn size_allocate(&self, i: u32, j: u32) -> u32 {
-        unsafe { imp::scrollable_drawing_area_size_allocate(self.to_glib_none().0, i, j) }
+        unsafe {
+            imp::scrollable_drawing_area_size_allocate(
+                self.to_glib_none().0 as *mut imp::ScrollableDrawingAreaFfi,
+                i,
+                j,
+            )
+        }
     }
     fn get_property_hadjustment(&self) -> Adjustment {
         let mut value = glib::Value::from(&Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
         unsafe {
             gobject_ffi::g_object_get_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "hadjustment".to_glib_none().0,
                 value.to_glib_none_mut().0,
             );
         }
-        value.get::<Adjustment>().unwrap()
+        value.get::<Adjustment>().unwrap().unwrap()
     }
     fn get_property_hscroll_policy(&self) -> u32 {
         let mut value = glib::Value::from(&u32::default());
         unsafe {
             gobject_ffi::g_object_get_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "hscroll-policy".to_glib_none().0,
                 value.to_glib_none_mut().0,
             );
         }
-        value.get::<u32>().unwrap()
+        value.get::<u32>().unwrap().unwrap()
     }
     fn get_property_vadjustment(&self) -> Adjustment {
         let mut value = glib::Value::from(&Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
         unsafe {
             gobject_ffi::g_object_get_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "vadjustment".to_glib_none().0,
                 value.to_glib_none_mut().0,
             );
         }
-        value.get::<Adjustment>().unwrap()
+        value.get::<Adjustment>().unwrap().unwrap()
     }
     fn get_property_vscroll_policy(&self) -> u32 {
         let mut value = glib::Value::from(&u32::default());
         unsafe {
             gobject_ffi::g_object_get_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "vscroll-policy".to_glib_none().0,
                 value.to_glib_none_mut().0,
             );
         }
-        value.get::<u32>().unwrap()
+        value.get::<u32>().unwrap().unwrap()
     }
     fn set_property_hadjustment(&self, v: Adjustment) {
         unsafe {
             gobject_ffi::g_object_set_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "hadjustment".to_glib_none().0,
                 glib::Value::from(&v).to_glib_none().0,
             );
@@ -1079,7 +545,7 @@ impl<O: IsA<ScrollableDrawingArea> + IsA<glib::object::Object> + glib::object::O
     fn set_property_hscroll_policy(&self, v: u32) {
         unsafe {
             gobject_ffi::g_object_set_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "hscroll-policy".to_glib_none().0,
                 glib::Value::from(&v).to_glib_none().0,
             );
@@ -1088,7 +554,7 @@ impl<O: IsA<ScrollableDrawingArea> + IsA<glib::object::Object> + glib::object::O
     fn set_property_vadjustment(&self, v: Adjustment) {
         unsafe {
             gobject_ffi::g_object_set_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "vadjustment".to_glib_none().0,
                 glib::Value::from(&v).to_glib_none().0,
             );
@@ -1097,7 +563,7 @@ impl<O: IsA<ScrollableDrawingArea> + IsA<glib::object::Object> + glib::object::O
     fn set_property_vscroll_policy(&self, v: u32) {
         unsafe {
             gobject_ffi::g_object_set_property(
-                self.to_glib_none().0,
+                self.to_glib_none().0 as *mut gobject_sys::GObject,
                 "vscroll-policy".to_glib_none().0,
                 glib::Value::from(&v).to_glib_none().0,
             );
@@ -1114,5 +580,5 @@ where
     #[allow(deprecated)]
     let _guard = glib::CallbackGuard::new();
     let f: &&(Fn(&P) -> (()) + 'static) = mem::transmute(f);
-    f(&ScrollableDrawingArea::from_glib_borrow(this).downcast_unchecked())
+    f(&ScrollableDrawingArea::from_glib_borrow(this).unsafe_cast())
 }

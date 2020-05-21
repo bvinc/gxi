@@ -1,25 +1,17 @@
-use gio::{
-    ActionExt,
-    ActionMapExt,
-    ApplicationFlags,
-    SimpleAction,
-    SimpleActionExt,
-};
-use glib::variant::{FromVariant, Variant};
+use crate::controller::ControllerRef;
+use crate::edit_view::EditView;
+use crate::prefs_win::PrefsWin;
+use crate::proto::{self, ThemeSettings};
+use crate::theme::{Color, Style, Theme};
+use gio::{ActionMapExt, SimpleAction};
+use glib::clone;
+use gtk::prelude::*;
 use gtk::*;
-use CoreMsg;
-use SharedQueue;
-use edit_view::EditView;
-use prefs_win::PrefsWin;
-use proto::{self, ThemeSettings};
-use rpc::{Core, Handler};
+use log::*;
 use serde_json::{self, Value};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use theme::{Color, Style, Theme};
-use xi_thread;
 
 pub struct MainState {
     pub themes: Vec<String>,
@@ -29,8 +21,7 @@ pub struct MainState {
 }
 
 pub struct MainWin {
-    core: Rc<RefCell<Core>>,
-    shared_queue: Arc<Mutex<SharedQueue>>,
+    controller: ControllerRef,
     window: ApplicationWindow,
     notebook: Notebook,
     builder: Builder,
@@ -43,111 +34,115 @@ pub struct MainWin {
 const GLADE_SRC: &str = include_str!("ui/gxi.glade");
 
 impl MainWin {
-
-    pub fn new(application: &Application, shared_queue: Arc<Mutex<SharedQueue>>, core: Rc<RefCell<Core>>) -> Rc<RefCell<MainWin>> {
+    pub fn new(application: &Application, controller: ControllerRef) -> MainWin {
         let glade_src = include_str!("ui/gxi.glade");
         let builder = Builder::new_from_string(glade_src);
 
         let window: ApplicationWindow = builder.get_object("appwindow").unwrap();
         let notebook: Notebook = builder.get_object("notebook").unwrap();
 
-        let main_win = Rc::new(RefCell::new(MainWin{
-            core: core.clone(),
-            shared_queue: shared_queue.clone(),
+        let main_win = MainWin {
+            controller: controller.clone(),
             window: window.clone(),
             notebook: notebook.clone(),
             builder: builder.clone(),
             views: Default::default(),
             w_to_ev: Default::default(),
             view_id_to_w: Default::default(),
-            state: Rc::new(RefCell::new(
-                MainState{
-                    themes: Default::default(),
-                    theme_name: "default".to_string(),
-                    theme: Default::default(),
-                    styles: Default::default(),
-                }
-            ))
-        }));
+            state: Rc::new(RefCell::new(MainState {
+                themes: Default::default(),
+                theme_name: "default".to_string(),
+                theme: Default::default(),
+                styles: Default::default(),
+            })),
+        };
 
+        window.set_application(Some(application));
 
-        window.set_application(application);
-
-        window.connect_delete_event(clone!(window => move |_, _| {
+        window.connect_delete_event(clone!(@strong window => move |_, _| {
             window.destroy();
             Inhibit(false)
         }));
 
         {
             let open_action = SimpleAction::new("open", None);
-            open_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::handle_open_button(main_win.clone());
+            open_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().handle_open_button();
             }));
             application.add_action(&open_action);
         }
         {
             let new_action = SimpleAction::new("new", None);
-            new_action.connect_activate(clone!(main_win => move |_,_| {
-                main_win.borrow_mut().req_new_view(None);
+            new_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().req_new_view(None);
             }));
             application.add_action(&new_action);
         }
         {
             let prefs_action = SimpleAction::new("prefs", None);
-            prefs_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::prefs(main_win.clone());
+            prefs_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().prefs();
             }));
             application.add_action(&prefs_action);
         }
         {
             let find_action = SimpleAction::new("find", None);
-            find_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::find(main_win.clone());
+            find_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().find();
             }));
             application.add_action(&find_action);
         }
         {
             let save_action = SimpleAction::new("save", None);
-            save_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::handle_save_button(&main_win.clone());
+            save_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().handle_save_button();
             }));
             application.add_action(&save_action);
         }
         {
             let save_as_action = SimpleAction::new("save_as", None);
-            save_as_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::current_save_as(&main_win.clone());
+            save_as_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().current_save_as();
             }));
             application.add_action(&save_as_action);
         }
         {
             let close_action = SimpleAction::new("close", None);
-            close_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::close(&main_win.clone());
+            close_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().close();
             }));
             application.add_action(&close_action);
         }
         {
             let close_all_action = SimpleAction::new("close_all", None);
-            close_all_action.connect_activate(clone!(main_win => move |_,_| {
-                MainWin::close_all(&main_win.clone());
+            close_all_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().close_all();
             }));
             application.add_action(&close_all_action);
         }
         {
             let quit_action = SimpleAction::new("quit", None);
-            quit_action.connect_activate(clone!(main_win => move |_,_| {
-                let main_win = main_win.borrow();
-                main_win.window.destroy();
+            quit_action.connect_activate(clone!(@strong controller => move |_,_| {
+                controller.borrow().quit();
             }));
             application.add_action(&quit_action);
         }
         {
-            let auto_indent_action = SimpleAction::new_stateful("auto_indent", None, &false.to_variant());;
-            auto_indent_action.connect_change_state(clone!(main_win => move |action, value| {
-                let mut main_win = main_win.borrow_mut();
-                main_win.set_auto_indent(action, value);
-            }));
+            let auto_indent_action =
+                SimpleAction::new_stateful("auto_indent", None, &false.to_variant());
+            auto_indent_action.connect_change_state(
+                clone!(@strong controller => move |action, value| {
+                    if value.is_none() {
+                        return;
+                    }
+                    if let Some(value) = value.as_ref() {
+                        action.set_state(value);
+                        let value: bool = value.get().unwrap();
+                        debug!("auto indent {}", value);
+                        controller.borrow().set_auto_indent(value)
+                    }
+                }),
+            );
             application.add_action(&auto_indent_action);
         }
 
@@ -155,39 +150,17 @@ impl MainWin {
 
         main_win
     }
-    pub fn activate(_application: &Application, _shared_queue: Arc<Mutex<SharedQueue>>) {
-        // TODO
-        unimplemented!();
-    }
-    pub fn open(_application: &Application, _shared_queue: Arc<Mutex<SharedQueue>>) {
-        // TODO
-        unimplemented!();
-    }
+    // pub fn activate(_application: &Application, _shared_queue: Arc<Mutex<SharedQueue>>) {
+    //     // TODO
+    //     unimplemented!();
+    // }
+    // pub fn open(_application: &Application, _shared_queue: Arc<Mutex<SharedQueue>>) {
+    //     // TODO
+    //     unimplemented!();
+    // }
 }
 
 impl MainWin {
-    pub fn handle_msg(main_win: Rc<RefCell<MainWin>>, msg: CoreMsg) {
-        match msg {
-            CoreMsg::NewViewReply{file_name, value} => {
-                MainWin::new_view_response(main_win, file_name, &value)
-            },
-            CoreMsg::Notification{method, params} => {
-                match method.as_ref() {
-                    "available_themes" => main_win.borrow_mut().available_themes(&params),
-                    "available_plugins" => main_win.borrow_mut().available_plugins(&params),
-                    "config_changed" => main_win.borrow_mut().config_changed(&params),
-                    "def_style" => main_win.borrow_mut().def_style(&params),
-                    "find_status" => main_win.borrow_mut().find_status(&params),
-                    "update" => main_win.borrow_mut().update(&params),
-                    "scroll_to" => main_win.borrow_mut().scroll_to(&params),
-                    "theme_changed" => main_win.borrow_mut().theme_changed(&params),
-                    _ => {
-                        error!("!!! UNHANDLED NOTIFICATION: {}", method);
-                    }
-                };
-            },
-        };
-    }
     pub fn available_themes(&mut self, params: &Value) {
         let mut state = self.state.borrow_mut();
         state.themes.clear();
@@ -200,7 +173,7 @@ impl MainWin {
         }
         if let Some(theme_name) = state.themes.first().map(Clone::clone) {
             state.theme_name = theme_name.clone();
-            self.core.borrow().send_notification("set_theme", &json!({"theme_name": theme_name}));
+            self.controller.borrow().set_theme(&theme_name);
         }
     }
 
@@ -214,7 +187,9 @@ impl MainWin {
             Ok(ts) => ts,
         };
 
-        let selection_foreground = theme_settings.selection_foreground.map(Color::from_ts_proto);
+        let selection_foreground = theme_settings
+            .selection_foreground
+            .map(Color::from_ts_proto);
         let selection = theme_settings.selection.map(Color::from_ts_proto);
 
         let theme = Theme::from_proto(&theme_settings);
@@ -223,7 +198,7 @@ impl MainWin {
             state.theme = theme;
         }
 
-        let selection_sytle = Style{
+        let selection_sytle = Style {
             fg_color: selection_foreground,
             bg_color: selection,
             weight: None,
@@ -241,7 +216,9 @@ impl MainWin {
     pub fn config_changed(&mut self, params: &Value) {
         let view_id = {
             let view_id = params["view_id"].as_str();
-            if view_id.is_none() { return; }
+            if view_id.is_none() {
+                return;
+            }
             view_id.unwrap().to_string()
         };
 
@@ -253,22 +230,14 @@ impl MainWin {
     pub fn find_status(&mut self, params: &Value) {
         let view_id = {
             let view_id = params["view_id"].as_str();
-            if view_id.is_none() { return; }
+            if view_id.is_none() {
+                return;
+            }
             view_id.unwrap().to_string()
         };
 
         if let Some(ev) = self.views.get(&view_id) {
             ev.borrow_mut().find_status(&params["queries"]);
-        }
-    }
-
-    pub fn set_auto_indent(&mut self, action: &SimpleAction, value: &Option<Variant>) {
-        if value.is_none() { return; }
-        if let Some(value) = value.as_ref() {
-            action.set_state(value);
-            let value: bool = value.get().unwrap();
-            debug!("auto indent {}", value);
-            self.core.borrow().modify_user_config(&json!("general"), &json!({"auto_indent": value}));
         }
     }
 
@@ -278,7 +247,7 @@ impl MainWin {
 
         if let Some(id) = params["id"].as_u64() {
             let id = id as usize;
-            
+
             self.set_style(id, style);
         }
     }
@@ -287,7 +256,7 @@ impl MainWin {
         let mut state = self.state.borrow_mut();
         // bump the array size up if needed
         while state.styles.len() < id {
-            state.styles.push(Style{
+            state.styles.push(Style {
                 fg_color: None,
                 bg_color: None,
                 weight: None,
@@ -307,7 +276,9 @@ impl MainWin {
 
         let view_id = {
             let view_id = params["view_id"].as_str();
-            if view_id.is_none() { return; }
+            if view_id.is_none() {
+                return;
+            }
             view_id.unwrap().to_string()
         };
 
@@ -320,7 +291,9 @@ impl MainWin {
         trace!("handling scroll_to {:?}", params);
         let view_id = {
             let view_id = params["view_id"].as_str();
-            if view_id.is_none() { return; }
+            if view_id.is_none() {
+                return;
+            }
             view_id.unwrap().to_string()
         };
 
@@ -351,76 +324,78 @@ impl MainWin {
     /// Display the FileChooserDialog for opening, send the result to the Xi core.
     /// This may call the GTK main loop.  There must not be any RefCell borrows out while this
     /// function runs.
-    pub fn handle_open_button(main_win: Rc<RefCell<MainWin>>) {
-        let fcd = FileChooserDialog::new::<FileChooserDialog>(None, None, FileChooserAction::Open);
-        fcd.set_transient_for(Some(&main_win.borrow().window.clone()));
-        fcd.add_button("Open", 33);
-        fcd.set_default_response(33);
+    pub fn handle_open_button(&self) {
+        let parent: Option<&ApplicationWindow> = None;
+        let fcd = FileChooserDialog::new(None, parent, FileChooserAction::Open);
+        // fcd.set_transient_for(Some(&main_win.window.clone()));
+        fcd.add_button("Open", ResponseType::Other(33));
+        fcd.set_default_response(ResponseType::Other(33));
         fcd.set_select_multiple(true);
         let response = fcd.run(); // Can call main loop, can't have any borrows out
         debug!("open response = {}", response);
-        if response == 33 {
-            let win = main_win.borrow();
+        if response == ResponseType::Other(33) {
             for file in fcd.get_filenames() {
-                win.req_new_view(Some(&file.to_string_lossy()));
+                self.req_new_view(Some(&file.to_string_lossy()));
             }
         }
         fcd.destroy();
     }
 
-    pub fn handle_save_button(main_win: &Rc<RefCell<MainWin>>) {
-        let edit_view = main_win.borrow().get_current_edit_view().clone();
+    pub fn handle_save_button(&self) {
+        let edit_view = self.get_current_edit_view().clone();
         if edit_view.borrow().file_name.is_some() {
             let ev = edit_view.borrow_mut();
-            let core = main_win.borrow().core.clone();
-            core.borrow().save(&ev.view_id, ev.file_name.as_ref().unwrap());
+            self.controller
+                .borrow()
+                .core()
+                .save(&ev.view_id, ev.file_name.as_ref().unwrap());
         } else {
-            MainWin::save_as(main_win, &edit_view);
+            self.save_as(&edit_view);
         }
     }
 
-    fn current_save_as(main_win: &Rc<RefCell<MainWin>>) {
-        let edit_view = main_win.borrow().get_current_edit_view().clone();
-        MainWin::save_as(main_win, &edit_view);
+    pub fn current_save_as(&self) {
+        let edit_view = self.get_current_edit_view().clone();
+        self.save_as(&edit_view);
     }
 
     /// Display the FileChooserDialog, send the result to the Xi core.
     /// This may call the GTK main loop.  There must not be any RefCell borrows out while this
     /// function runs.
-    fn save_as(main_win: &Rc<RefCell<MainWin>>, edit_view: &Rc<RefCell<EditView>>) {
-        let fcd = FileChooserDialog::new::<FileChooserDialog>(None, None, FileChooserAction::Save);
-        fcd.set_transient_for(Some(&main_win.borrow().window.clone()));
-        fcd.add_button("Save", 33);
-        fcd.set_default_response(33);
+    pub fn save_as(&self, edit_view: &Rc<RefCell<EditView>>) {
+        let parent: Option<&ApplicationWindow> = None;
+        let fcd = FileChooserDialog::new(None, parent, FileChooserAction::Save);
+        // fcd.set_transient_for(Some(&main_win.borrow().window.clone()));
+        fcd.add_button("Save", ResponseType::Other(33));
+        fcd.set_default_response(ResponseType::Other(33));
         let response = fcd.run(); // Can call main loop, can't have any borrows out
         debug!("save response = {}", response);
-        if response == 33 {
-            let win = main_win.borrow();
+        if response == ResponseType::Other(33) {
+            // let win = main_win;
             if let Some(file) = fcd.get_filename() {
                 debug!("saving {:?}", file);
                 let view_id = edit_view.borrow().view_id.clone();
                 let file = file.to_string_lossy();
-                win.core.borrow().save(&view_id, &file);
+                self.controller.borrow().core().save(&view_id, &file);
                 edit_view.borrow_mut().set_file(&file);
             }
         }
         fcd.destroy();
     }
 
-    fn prefs(main_win: Rc<RefCell<MainWin>>) {
+    pub fn prefs(&self) {
         // let (main_state, core) = {
         //     let main_win = main_win.borrow();
         //     (main_win.state.clone(), main_win.core.clone())
         // };
-        let main_win = main_win.borrow();
-        let main_state = main_win.state.clone();
-        let core = main_win.core.clone();
-        let prefs_win = PrefsWin::new(&main_win.window, &main_state, &core);
+        let main_state = self.state.clone();
+        let controller = self.controller.clone();
+        let prefs_win = PrefsWin::new(&self.window, &main_state, controller.clone());
         // prefs_win.run();
     }
 
-    fn find(main_win: Rc<RefCell<MainWin>>) {
-        let edit_view = main_win.borrow().get_current_edit_view().clone();
+    pub fn find(&self) {
+        let edit_view = self.get_current_edit_view().clone();
         edit_view.borrow().start_search();
     }
 
@@ -436,80 +411,76 @@ impl MainWin {
     }
 
     fn req_new_view(&self, file_name: Option<&str>) {
-        let mut params = json!({});
-        if let Some(file_name) = file_name {
-            params["file_path"] = json!(file_name);
-        }
-
-        let shared_queue2 = self.shared_queue.clone();
-        let file_name2 = file_name.map(|s| s.to_string());
-        self.core.borrow_mut().send_request("new_view", &params,
-            move |value| {
-                let value = value.clone();
-                let mut shared_queue = shared_queue2.lock().unwrap();
-                shared_queue.add_core_msg(CoreMsg::NewViewReply{
-                    file_name: file_name2,
-                    value,
-                })
-            }
-        );
+        self.controller.borrow().req_new_view(file_name)
     }
 
-    fn new_view_response(main_win: Rc<RefCell<MainWin>>, file_name: Option<String>, value: &Value) {
-        let mut win = main_win.borrow_mut();
+    pub fn new_view_response(&mut self, file_name: Option<String>, value: &Value) {
+        let controller = self.controller.clone();
         if let Some(view_id) = value.as_str() {
-            let edit_view = EditView::new(win.state.clone(), win.core.clone(), file_name, view_id);
+            let edit_view = EditView::new(
+                self.state.clone(),
+                self.controller.clone(),
+                file_name,
+                view_id,
+            );
             {
                 let ev = edit_view.borrow();
-                let page_num = win.notebook.insert_page(&ev.root_widget, Some(&ev.tab_widget), None);
-                if let Some(w) = win.notebook.get_nth_page(Some(page_num)) {
-                    win.w_to_ev.insert(w.clone(), edit_view.clone());
-                    win.view_id_to_w.insert(view_id.to_string(), w);
+                let page_num =
+                    self.notebook
+                        .insert_page(&ev.root_widget, Some(&ev.tab_widget), None);
+                if let Some(w) = self.notebook.get_nth_page(Some(page_num)) {
+                    self.w_to_ev.insert(w.clone(), edit_view.clone());
+                    self.view_id_to_w.insert(view_id.to_string(), w);
                 }
 
-                ev.close_button.connect_clicked(clone!(main_win, edit_view => move |_| {
-                    MainWin::close_view(&main_win, &edit_view);
-                }));
+                let vid = view_id.to_string();
+                ev.close_button.connect_clicked(
+                    clone!(@strong controller, @strong vid => move |_| {
+                        controller.borrow().close_view(&vid);
+                    }),
+                );
             }
 
-            win.views.insert(view_id.to_string(), edit_view);
+            self.views.insert(view_id.to_string(), edit_view);
         }
     }
 
-    fn close_all(main_win: &Rc<RefCell<MainWin>>) {
-        let edit_view = main_win.borrow().get_current_edit_view();
-        MainWin::close_view(&main_win, &edit_view);
+    pub fn close_all(&mut self) {
+        let edit_view = self.get_current_edit_view();
+        self.close_view(&edit_view.borrow().view_id);
     }
 
-    fn close(main_win: &Rc<RefCell<MainWin>>) {
-        let edit_view = main_win.borrow().get_current_edit_view();
-        MainWin::close_view(&main_win, &edit_view);
+    pub fn close(&mut self) {
+        let edit_view = self.get_current_edit_view();
+        self.close_view(&edit_view.borrow().view_id);
     }
 
-    fn close_view(main_win: &Rc<RefCell<MainWin>>, edit_view: &Rc<RefCell<EditView>>) {
-        let pristine = edit_view.borrow().pristine;
-        if !pristine {
-            let builder = Builder::new_from_string(&GLADE_SRC);
-            let ask_save_dialog: Dialog = builder.get_object("ask_save_dialog").unwrap();
-            let ret = ask_save_dialog.run();
-            ask_save_dialog.destroy();
-            debug!("ask_save_dialog = {}", ret);
-            match ret {
-                1 => MainWin::save_as(main_win, edit_view),
-                2 => return,
-                _ => {},
-            };
-        }
-        let view_id = edit_view.borrow().view_id.clone();
-        let mut main_win = main_win.borrow_mut();
-        if let Some(w) = main_win.view_id_to_w.get(&view_id).map(Clone::clone) {
-            if let Some(page_num) = main_win.notebook.page_num(&w) {
-                main_win.notebook.remove_page(Some(page_num));
+    pub fn close_view(&mut self, view_id: &str) {
+        if let Some(w) = self.view_id_to_w.get(view_id).map(Clone::clone) {
+            let edit_view = self.w_to_ev.get(&w).expect("ev not found");
+            let pristine = edit_view.borrow().pristine;
+            if !pristine {
+                let builder = Builder::new_from_string(&GLADE_SRC);
+                let ask_save_dialog: Dialog = builder.get_object("ask_save_dialog").unwrap();
+                let ret = ask_save_dialog.run();
+                ask_save_dialog.destroy();
+                debug!("ask_save_dialog = {}", ret);
+                match ret {
+                    ResponseType::Other(1) => self.save_as(edit_view),
+                    ResponseType::Other(2) => return,
+                    _ => {}
+                };
             }
-            main_win.w_to_ev.remove(&w.clone());
+
+            if let Some(page_num) = self.notebook.page_num(&w) {
+                self.notebook.remove_page(Some(page_num));
+            }
+            self.w_to_ev.remove(&w.clone());
         }
-        main_win.view_id_to_w.remove(&view_id);
-        main_win.core.borrow().close_view(&view_id);
+        self.view_id_to_w.remove(view_id);
+    }
+
+    pub fn quit(&self) {
+        self.window.destroy();
     }
 }
-

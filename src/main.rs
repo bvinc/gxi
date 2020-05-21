@@ -1,91 +1,49 @@
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 
-extern crate cairo;
-extern crate clap;
-extern crate env_logger;
-extern crate gdk;
-extern crate gio;
-#[macro_use] extern crate glib;
-extern crate glib_sys;
-extern crate gobject_sys;
-extern crate gtk;
-extern crate gtk_sys;
-extern crate libc;
-#[macro_use] extern crate log;
-extern crate mio;
-extern crate pango;
-extern crate pangocairo;
-extern crate serde;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate serde_json;
-extern crate fontconfig;
-extern crate xi_core_lib;
-extern crate xi_rpc;
-
-#[macro_use] mod macros;
-
+mod channel;
 mod clipboard;
+mod controller;
 mod edit_view;
-mod scrollable_drawing_area;
 mod linecache;
 mod main_win;
 mod prefs_win;
 mod proto;
 mod rpc;
-mod source;
+mod scrollable_drawing_area;
 mod theme;
 mod xi_thread;
 
-use clap::{Arg, App, SubCommand};
-use gio::{
-    ApplicationExt,
-    ApplicationExtManual,
-    ApplicationFlags,
-    FileExt,
-};
-use glib::MainContext;
-use gtk::{
-    Application,
-    GtkApplicationExt,
-};
+use crate::channel::Sender;
+use crate::controller::{Controller, CoreMsg};
+use clap::{Arg, SubCommand};
+use gio::prelude::*;
+use gio::{ApplicationExt, ApplicationFlags, FileExt};
+use glib::clone;
+use gtk::{Application};
+use log::*;
 use main_win::MainWin;
-use mio::unix::{PipeReader, PipeWriter, pipe};
-use mio::TryRead;
 use rpc::{Core, Handler};
 use serde_json::Value;
-use source::{SourceFuncs, new_source};
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::VecDeque;
-use std::env::{args, home_dir};
-use std::io::Write;
-use std::os::unix::io::AsRawFd;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::env::args;
+use dirs_next::home_dir;
 
-#[derive(Clone, Debug)]
-pub enum CoreMsg {
-    Notification{method: String, params: Value},
-    NewViewReply{file_name: Option<String>, value: Value},
-}
+// pub struct SharedQueue {
+//     queue: VecDeque<CoreMsg>,
+// }
 
-pub struct SharedQueue {
-    queue: VecDeque<CoreMsg>,
-    pipe_writer: PipeWriter,
-    pipe_reader: PipeReader,
-}
-
-impl SharedQueue {
-    pub fn add_core_msg(&mut self, msg: CoreMsg)
-    {
-        if self.queue.is_empty() {
-            self.pipe_writer.write_all(&[0u8])
-                .expect("failed to write to signalling pipe");
-        }
-        trace!("pushing to queue");
-        self.queue.push_back(msg);
-    }
-}
+// impl SharedQueue {
+//     pub fn add_core_msg(&mut self, msg: CoreMsg) {
+//         if self.queue.is_empty() {
+//             self.pipe_writer
+//                 .write_all(&[0u8])
+//                 .expect("failed to write to signalling pipe");
+//         }
+//         trace!("pushing to queue");
+//         self.queue.push_back(msg);
+//     }
+// }
 
 trait IdleCallback: Send {
     fn call(self: Box<Self>, a: &Any);
@@ -97,58 +55,59 @@ impl<F: FnOnce(&Any) + Send> IdleCallback for F {
     }
 }
 
-struct QueueSource {
-    win: Rc<RefCell<MainWin>>,
-    queue: Arc<Mutex<SharedQueue>>,
-}
+// struct QueueSource {
+//     win: Rc<RefCell<MainWin>>,
+//     sender: Sender<CoreMsg>,
+// }
 
-impl SourceFuncs for QueueSource {
-    fn check(&self) -> bool {
-        false
-    }
+// impl SourceFuncs for QueueSource {
+//     fn check(&self) -> bool {
+//         false
+//     }
 
-    fn prepare(&self) -> (bool, Option<u32>) {
-        (false, None)
-    }
+//     fn prepare(&self) -> (bool, Option<u32>) {
+//         (false, None)
+//     }
 
-    fn dispatch(&self) -> bool {
-        trace!("dispatch");
-        let mut shared_queue = self.queue.lock().unwrap();
-        while let Some(msg) = shared_queue.queue.pop_front() {
-            trace!("found a msg");
-            MainWin::handle_msg(self.win.clone(), msg);
-        }
-        let mut buf = [0u8; 64];
-        shared_queue.pipe_reader.try_read(&mut buf)
-            .expect("failed to read signalling pipe");
-        true
-    }
-}
+//     fn dispatch(&self) -> bool {
+//         trace!("dispatch");
+//         let mut shared_queue = self.queue.lock().unwrap();
+//         while let Some(msg) = shared_queue.queue.pop_front() {
+//             trace!("found a msg");
+//             MainWin::handle_msg(self.win.clone(), msg);
+//         }
+//         let mut buf = [0u8; 64];
+//         shared_queue
+//             .pipe_reader
+//             .try_read(&mut buf)
+//             .expect("failed to read signalling pipe");
+//         true
+//     }
+// }
 
 #[derive(Clone)]
 struct MyHandler {
-    shared_queue: Arc<Mutex<SharedQueue>>,
+    sender: Sender<CoreMsg>,
 }
 
 impl MyHandler {
-    fn new(shared_queue: Arc<Mutex<SharedQueue>>) -> MyHandler {
-        MyHandler {
-            shared_queue,
-        }
+    fn new(sender: Sender<CoreMsg>) -> MyHandler {
+        MyHandler { sender }
     }
 }
 
 impl Handler for MyHandler {
     fn notification(&self, method: &str, params: &Value) {
-        debug!("CORE --> {{\"method\": \"{}\", \"params\":{}}}", method, params);
+        debug!(
+            "CORE --> {{\"method\": \"{}\", \"params\":{}}}",
+            method, params
+        );
         let method2 = method.to_string();
         let params2 = params.clone();
-        self.shared_queue.lock().unwrap().add_core_msg(
-            CoreMsg::Notification{
-                method: method2,
-                params: params2
-            }
-        );
+        self.sender.send(CoreMsg::Notification {
+            method: method2,
+            params: params2,
+        });
     }
 }
 
@@ -170,22 +129,32 @@ fn main() {
     // }
     // debug!("files {:?}", files);
 
-    let queue: VecDeque<CoreMsg> = Default::default();
-    let (reader, writer) = pipe().unwrap();
-    let reader_raw_fd = reader.as_raw_fd();
+    let controller = Controller::new();
+    let controller2 = controller.clone();
+    let (chan, sender) = channel::Channel::new(move |msg| {
+        controller2.borrow().handle_msg(msg);
+    });
+    controller.borrow_mut().set_sender(sender.clone());
+    controller.borrow_mut().set_channel(chan);
 
-    let shared_queue = Arc::new(Mutex::new(SharedQueue{
-        queue: queue.clone(),
-        pipe_writer: writer,
-        pipe_reader: reader,
-    }));
+    // let queue: VecDeque<CoreMsg> = Default::default();
+    // let (reader, writer) = pipe().unwrap();
+    // let reader_raw_fd = reader.as_raw_fd();
+
+    // let shared_queue = Arc::new(Mutex::new(SharedQueue {
+    //     queue: queue.clone(),
+    //     pipe_writer: writer,
+    //     pipe_reader: reader,
+    // }));
 
     let (xi_peer, rx) = xi_thread::start_xi_thread();
-    let handler = MyHandler::new(shared_queue.clone());
+    let handler = MyHandler::new(sender.clone());
     let core = Core::new(xi_peer, rx, handler.clone());
+    controller.borrow_mut().set_core(core);
 
-    let application = Application::new("com.github.bvinc.gxi", ApplicationFlags::HANDLES_OPEN)
-        .expect("failed to create gtk application");
+    let application =
+        Application::new(Some("com.github.bvinc.gxi"), ApplicationFlags::HANDLES_OPEN)
+            .expect("failed to create gtk application");
 
     let mut config_dir = None;
     let mut plugin_dir = None;
@@ -196,44 +165,32 @@ fn main() {
         plugin_dir = xi_plugin.to_str().map(|s| s.to_string());
     }
 
-    application.connect_startup(clone!(shared_queue, core => move |application| {
+    application.connect_startup(clone!(@strong controller => move |application| {
         debug!("startup");
-        core.client_started(config_dir.clone(), plugin_dir.clone());
+        controller.borrow().core().client_started(config_dir.clone(), plugin_dir.clone());
 
-        let main_win = MainWin::new(application, shared_queue.clone(), Rc::new(RefCell::new(core.clone())));
+        let main_win = MainWin::new(application, controller.clone());
+        controller.borrow_mut().set_main_win(main_win);
 
-        let source = new_source(QueueSource {
-            win: main_win.clone(),
-            queue: shared_queue.clone(),
-        });
-        unsafe {
-            use glib::translate::ToGlibPtr;
-            ::glib_sys::g_source_add_unix_fd(source.to_glib_none().0, reader_raw_fd, ::glib_sys::GIOCondition::IN);
-        }
-        let main_context = MainContext::default().expect("no main context");
-        source.attach(&main_context);
+        // let source = new_source(QueueSource {
+        //     win: main_win.clone(),
+        //     sender: sender.clone(),
+        // });
+        // unsafe {
+        //     use glib::translate::ToGlibPtr;
+        //     ::glib_sys::g_source_add_unix_fd(source.to_glib_none().0, reader_raw_fd, ::glib_sys::G_IO_IN);
+        // }
+        // let main_context = MainContext::default();
+        // source.attach(Some(&main_context));
     }));
 
-
-    application.connect_activate(clone!(shared_queue, core => move |application| {
+    application.connect_activate(clone!(@strong controller => move |application| {
         debug!("activate");
 
-        let mut params = json!({});
-        params["file_path"] = Value::Null;
-
-        let shared_queue2 = shared_queue.clone();
-        core.send_request("new_view", &params,
-            move |value| {
-                let mut shared_queue = shared_queue2.lock().unwrap();
-                shared_queue.add_core_msg(CoreMsg::NewViewReply{
-                    file_name: None,
-                    value: value.clone(),
-                })
-            }
-        );
+        controller.borrow().req_new_view(None);
     }));
 
-    application.connect_open(clone!(shared_queue, core => move |_,files,s| {
+    application.connect_open(clone!(@strong controller => move |_,files,s| {
         debug!("open");
 
         for file in files {
@@ -241,20 +198,8 @@ fn main() {
             if path.is_none() { continue; }
             let path = path.unwrap();
             let path = path.to_string_lossy().into_owned();
-            
-            let mut params = json!({});
-            params["file_path"] = json!(path);
 
-            let shared_queue2 = shared_queue.clone();
-            core.send_request("new_view", &params,
-                move |value| {
-                    let mut shared_queue = shared_queue2.lock().unwrap();
-                    shared_queue.add_core_msg(CoreMsg::NewViewReply{
-                        file_name: Some(path),
-                    value: value.clone(),
-                    })
-                }
-            );
+            controller.borrow().req_new_view(Some(&path));
         }
     }));
     application.connect_shutdown(move |_| {
